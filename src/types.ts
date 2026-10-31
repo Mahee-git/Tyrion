@@ -1,0 +1,14 @@
+export type Account = { id: string; name: string; type: string; openingBalance: number; currency: string; createdAt: string }
+export type Category = { id: string; name: string; icon: string; color: string }
+export type Transaction = { id: string; kind: 'expense' | 'income' | 'transfer'; title: string; amount: number; categoryId?: string; source?: string; accountId: string; toAccountId?: string; date: string; note?: string; createdAt: string }
+export type Goal = { id: string; name: string; target: number; allocated: number; createdAt: string }
+export type SavingsEvent = { id: string; goalId: string; amount: number; kind: 'allocate' | 'withdraw'; date: string }
+export type Investment = { id: string; name: string; sector: string; invested: number; fees?: number; currentValue: number; date: string; accountId: string; note?: string }
+export type InvestmentEvent = { id: string; investmentId: string; kind: 'contribute' | 'withdraw' | 'valuation' | 'dividend'; amount: number; fee?: number; costBasisRemoved?: number; realizedGain?: number; date: string; accountId?: string; note?: string }
+export type UserPreferences = { currency: string; timezone: string }
+export type Stock = { id: string; name: string; symbol: string; currentPrice: number; currency: 'BDT' }
+export type StockTrade = { id: string; stockId: string; side: 'buy' | 'sell'; quantity: number; price: number; feePct: number; fixedFee: number; accountId: string; date: string; note?: string }
+export type Dividend = { id: string; stockId: string; amount: number; accountId: string; date: string; note?: string }
+export type BlogPost = { id: string; title: string; slug: string; excerpt: string; content: string; category: string; coverUrl?: string; status: 'draft' | 'published'; publishedAt?: string; updatedAt: string }
+export type FinanceData = { accounts: Account[]; categories: Category[]; transactions: Transaction[]; goals: Goal[]; savingsEvents: SavingsEvent[]; investments: Investment[]; investmentEvents: InvestmentEvent[]; stocks: Stock[]; stockTrades: StockTrade[]; dividends: Dividend[]; blogs: BlogPost[]; preferences: UserPreferences }
+export type Page = 'dashboard' | 'expenses' | 'transactions' | 'income' | 'investments' | 'savings' | 'accounts' | 'reports' | 'blog' | 'admin' | 'settings'
