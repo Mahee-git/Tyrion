@@ -10,7 +10,7 @@ import {
   Area, AreaChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis
 } from 'recharts'
-import { useFinance } from './store'
+import { emptyData, useFinance } from './store'
 import { dateInRange, durationSince, getTotals, investmentCostBasis, isoLocal, money, monthBounds, round2, setFinancePreferences, startOfWeek, stockPositions, todayISO, uid } from './finance'
 import type { Account, BlogPost, Category, FinanceData, Goal, Page, Stock, StockTrade, Transaction } from './types'
 
@@ -306,4 +306,3 @@ function buildSeries(data:FinanceData,period:'Daily'|'Weekly'|'Monthly'){
   }return entries
 }
 function buildWeekBars(data:FinanceData){const now=new Date(`${todayISO()}T00:00:00`);const start=startOfWeek(now);return Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);const day=isoLocal(d);return{label:new Intl.DateTimeFormat('en',{weekday:'short'}).format(d).slice(0,1),value:data.transactions.filter(t=>t.kind==='expense'&&t.date===day).reduce((s,t)=>s+t.amount,0)}})}
-
