@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import type { BlogPost, FinanceData } from './types'
 
@@ -25,63 +25,98 @@ function readLocal(userId?: string): FinanceData {
 function blogFromRow(row: any): BlogPost {
   return { id: row.id, title: row.title, slug: row.slug, excerpt: row.excerpt || '', content: row.content || '', category: row.category || 'General', coverUrl: row.cover_url || '', status: row.status, publishedAt: row.published_at || undefined, updatedAt: row.updated_at }
 }
+function withTimeout<T>(p: PromiseLike<T>, ms = 12000): Promise<T> {
+  return Promise.race([Promise.resolve(p), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('Request timed out')), ms))])
+}
+const normalise = (raw: any) => ({ ...emptyData, ...raw, preferences: { ...emptyData.preferences, ...(raw.preferences || {}) }, investmentEvents: raw.investmentEvents || [], accounts: raw.accounts || [], categories: raw.categories || [], transactions: raw.transactions || [], goals: raw.goals || [], savingsEvents: raw.savingsEvents || [], investments: raw.investments || [], stocks: raw.stocks || [], stockTrades: raw.stockTrades || [], dividends: raw.dividends || [] })
+
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<FinanceData>(() => readLocal())
   const [session, setSession] = useState<Session | null>(null)
-  const [authLoading, setAuthLoading] = useState(Boolean(supabase))
-  const [loaded, setLoaded] = useState(!supabase)
+  const [sessionReady, setSessionReady] = useState(!supabase)
+  // Which user's data is currently loaded ('anon' = signed out). Loading is derived from this, so a
+  // token refresh / tab re-focus for the SAME user can never put the app back on the loading screen.
+  const [loadedKey, setLoadedKey] = useState<string | null>(supabase ? null : 'anon')
   const [isAdmin, setIsAdmin] = useState(false)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
+  const cloudReadOk = useRef(true)
+  const userId = session?.user?.id
+  const dataKey = userId ?? 'anon'
+  const loaded = sessionReady && loadedKey === dataKey
+  const authLoading = Boolean(supabase) && !loaded
 
   useEffect(() => {
     if (!supabase) return
     let alive = true
-    supabase.auth.getSession().then(({ data: { session: s } }) => { if (alive) setSession(s) })
-    const { data: listener } = supabase.auth.onAuthStateChange((event, s) => { setSession(s); if (event === 'SIGNED_OUT' || !s) { setLoaded(true); setAuthLoading(false) } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') { setLoaded(false); setAuthLoading(true) } setPasswordRecovery(event === 'PASSWORD_RECOVERY') })
+    supabase.auth.getSession()
+      .then(({ data: { session: s } }) => { if (alive) setSession(s) })
+      .catch(err => console.error('Session check failed:', err))
+      .finally(() => { if (alive) setSessionReady(true) })
+    const { data: listener } = supabase.auth.onAuthStateChange((event, s) => {
+      if (!alive) return
+      // Supabase re-emits SIGNED_IN / TOKEN_REFRESHED whenever the tab regains focus.
+      // Keep the same object when nothing changed so no re-render or reload is triggered.
+      setSession(prev => (prev?.user?.id === s?.user?.id && prev?.access_token === s?.access_token ? prev : s))
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+      else if (event === 'SIGNED_OUT') setPasswordRecovery(false)
+    })
     return () => { alive = false; listener.subscription.unsubscribe() }
   }, [])
 
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase || !sessionReady) return
     let alive = true
+    const key = userId ?? 'anon'
     const load = async () => {
-      if (!session?.user) {
-        const { data: publicPosts } = await supabase!.from('blog_posts').select('*').eq('status', 'published').order('published_at', { ascending: false })
+      try {
+        cloudReadOk.current = true
+        if (!userId) {
+          const { data: publicPosts } = await withTimeout(supabase!.from('blog_posts').select('*').eq('status', 'published').order('published_at', { ascending: false }))
+          if (!alive) return
+          setData({ ...emptyData, ...readLocal(), blogs: (publicPosts || []).map(blogFromRow) })
+          setIsAdmin(false)
+          return
+        }
+        const [{ data: stateRow, error: stateError }, { data: posts }, { data: profile }] = await withTimeout(Promise.all([
+          supabase!.from('finance_state').select('data').eq('user_id', userId).maybeSingle(),
+          supabase!.from('blog_posts').select('*').order('updated_at', { ascending: false }),
+          supabase!.from('profiles').select('role').eq('id', userId).maybeSingle()
+        ]))
         if (!alive) return
-        setData({ ...emptyData, ...readLocal(), blogs: (publicPosts || []).map(blogFromRow) })
-        setIsAdmin(false); setLoaded(true); setAuthLoading(false); return
+        if (stateError) cloudReadOk.current = false
+        const base = normalise(stateError || !stateRow?.data ? readLocal(userId) : stateRow.data)
+        setData({ ...base, blogs: (posts || []).map(blogFromRow) })
+        setIsAdmin(profile?.role === 'admin')
+      } catch (err) {
+        console.error('Could not load cloud data, using the local copy:', err)
+        if (!alive) return
+        cloudReadOk.current = !userId // never overwrite the cloud with a copy we could not compare against
+        setData({ ...normalise(readLocal(userId)), blogs: [] })
+      } finally {
+        if (alive) setLoadedKey(key)
       }
-      setAuthLoading(true); setLoaded(false)
-      const [{ data: stateRow, error: stateError }, { data: posts }, { data: profile }] = await Promise.all([
-        supabase!.from('finance_state').select('data').eq('user_id', session.user.id).maybeSingle(),
-        supabase!.from('blog_posts').select('*').order('updated_at', { ascending: false }),
-        supabase!.from('profiles').select('role').eq('id', session.user.id).maybeSingle()
-      ])
-      if (!alive) return
-      const rawBase = stateError || !stateRow?.data ? readLocal(session.user.id) : stateRow.data
-      const base = { ...emptyData, ...rawBase, preferences: { ...emptyData.preferences, ...(rawBase.preferences || {}) }, investmentEvents: rawBase.investmentEvents || [], accounts: rawBase.accounts || [], categories: rawBase.categories || [], transactions: rawBase.transactions || [], goals: rawBase.goals || [], savingsEvents: rawBase.savingsEvents || [], investments: rawBase.investments || [], stocks: rawBase.stocks || [], stockTrades: rawBase.stockTrades || [], dividends: rawBase.dividends || [] }
-      setData({ ...base, blogs: (posts || []).map(blogFromRow) })
-      setIsAdmin(profile?.role === 'admin')
-      setLoaded(true); setAuthLoading(false)
     }
     load()
     return () => { alive = false }
-  }, [session?.user?.id])
+  }, [userId, sessionReady])
 
   useEffect(() => {
     if (!loaded) return
-    const key = storageKey(session?.user?.id)
-    const localCopy = { ...data }
-    localStorage.setItem(key, JSON.stringify(localCopy))
-    if (!supabase || !session?.user) return
-    const timer = window.setTimeout(() => {
+    try { localStorage.setItem(storageKey(userId), JSON.stringify({ ...data })) } catch { /* storage full or blocked */ }
+    if (!supabase || !userId) return
+    const push = () => {
+      if (!cloudReadOk.current) return
       const { blogs: _blogs, ...financeOnly } = data
-      supabase!.from('finance_state').upsert({ user_id: session.user.id, data: financeOnly, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).then(({ error }) => {
+      supabase!.from('finance_state').upsert({ user_id: userId, data: financeOnly, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).then(({ error }) => {
         if (error) console.error('Cloud sync failed:', error.message)
       })
-    }, 650)
-    return () => window.clearTimeout(timer)
-  }, [data, loaded, session?.user?.id])
+    }
+    const timer = window.setTimeout(push, 650)
+    // Mobile browsers freeze timers in background tabs, so save immediately when the tab is hidden.
+    const flush = () => { if (document.visibilityState === 'hidden') { window.clearTimeout(timer); push() } }
+    document.addEventListener('visibilitychange', flush)
+    return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', flush) }
+  }, [data, loaded, userId])
 
   const signIn = async (email: string, password: string) => {
     if (!supabase) return 'Cloud authentication is not configured. Add your Supabase URL and publishable key to the GitHub Actions secrets.'

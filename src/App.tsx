@@ -70,7 +70,7 @@ function PublicBlog({ onBack }: { onBack: () => void }) {
 export default function App() {
   const { data, setData, session, authLoading, cloudEnabled, isAdmin, passwordRecovery, updatePassword, signOut, saveBlog, deleteBlog, uploadBlogCover } = useFinance()
   setFinancePreferences(data.preferences); document.documentElement.dataset.timezone = data.preferences?.timezone || 'Asia/Dhaka'
-  const [page, setPage] = useState<Page>('dashboard')
+  const [page, setPage] = useState<Page>(() => { try { const p = sessionStorage.getItem('tyrion-page') as Page | null; return p && navItems.some(n => n.id === p) ? p : 'dashboard' } catch { return 'dashboard' } })
   const [dark, setDark] = useState(() => localStorage.getItem('tyrion-theme') === 'dark')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
@@ -94,7 +94,10 @@ export default function App() {
   useEffect(() => { if (toast) { const t = window.setTimeout(()=>setToast(''), 3000); return ()=>window.clearTimeout(t) } }, [toast])
   useEffect(() => { const handlePath = () => setPublicBlog(window.location.hash === '#/blog' || window.location.pathname.replace(/\/$/, '').endsWith('/blog')); window.addEventListener('popstate', handlePath); window.addEventListener('hashchange', handlePath); return () => { window.removeEventListener('popstate', handlePath); window.removeEventListener('hashchange', handlePath) } }, [])
   useEffect(() => { if (data.categories.length===0) setData(d=>({...d,categories:initialCategories})) }, [data.categories.length, setData])
-  useEffect(() => { if (page === 'admin' && !isAdmin) setPage('dashboard') }, [page, isAdmin])
+  useEffect(() => { if (page === 'admin' && !isAdmin && !authLoading) setPage('dashboard') }, [page, isAdmin, authLoading])
+  useEffect(() => { try { sessionStorage.setItem('tyrion-page', page) } catch {} window.scrollTo({ top: 0 }) }, [page])
+  useEffect(() => { document.body.classList.toggle('no-scroll', mobileNav || !!modal); return () => document.body.classList.remove('no-scroll') }, [mobileNav, modal])
+  useEffect(() => { const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileNav(false) }; const onResize = () => { if (window.innerWidth > 920) setMobileNav(false) }; window.addEventListener('keydown', onKey); window.addEventListener('resize', onResize); return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize) } }, [])
 
   if (cloudEnabled && authLoading) return <div className="loading-screen"><div className="brand-mark">T.</div><span>Preparing your financial space…</span></div>
   if (cloudEnabled && passwordRecovery && session) return <ResetPasswordScreen/>
@@ -160,14 +163,15 @@ export default function App() {
   return <div className={`app-shell ${dark?'dark':''}`}>
     <div className="ambient ambient-one"/><div className="ambient ambient-two"/>
     <div className={`app-frame ${collapsed?'sidebar-collapsed':''}`}>
+      {mobileNav&&<div className="mobile-scrim" onClick={()=>setMobileNav(false)}/>}
       <aside className={`sidebar glass ${mobileNav?'mobile-open':''}`}>
-        <div className="brand-row"><span className="brand-mark">T.</span><span className="brand-name">Tyrion</span><button className="sidebar-collapse" onClick={()=>setCollapsed(v=>!v)}><Menu size={17}/></button></div>
+        <div className="brand-row"><span className="brand-mark">T.</span><span className="brand-name">Tyrion</span><button className="drawer-close" aria-label="Close menu" onClick={()=>setMobileNav(false)}><X size={19}/></button><button className="sidebar-collapse" onClick={()=>setCollapsed(v=>!v)}><Menu size={17}/></button></div>
         <div className="sidebar-label">WORKSPACE</div>
         <nav className="nav-list">{navItems.filter(item=>item.id!=='admin'||isAdmin).map(item=>{const I=item.icon;return <button key={item.id} onClick={()=>{setPage(item.id);setMobileNav(false);setBlogView(null)}} className={`nav-item ${page===item.id?'active':''}`} title={item.label}><I size={17}/><span>{item.label}</span>{item.id==='admin'&&isAdmin&&<i className="nav-dot"/>}</button>})}</nav>
         <div className="sidebar-bottom"><div className="mini-avatar">{session?.user?.email?.slice(0,1).toUpperCase()||'Y'}</div><div className="profile-copy"><strong>{session?.user?.email?.split('@')[0]||'Your space'}</strong><span>{session ? 'Personal account' : 'Personal use'}</span></div><button className="dots-btn" onClick={()=>setPage('settings')}><MoreHorizontal size={18}/></button></div>
       </aside>
       <main className="main-area">
-        <header className="topbar"><button className="mobile-menu icon-btn" onClick={()=>setMobileNav(v=>!v)}><Menu size={19}/></button><div className="breadcrumb"><span>Workspace</span><i>/</i><strong>{pageTitle}</strong></div><div className="top-actions"><div className="date-pill"><CalendarDays size={14}/><span>{new Intl.DateTimeFormat('en', {day:'numeric',month:'short',year:'numeric',timeZone:data.preferences?.timezone||'Asia/Dhaka'}).format(new Date())}</span></div><button className="icon-btn subtle" onClick={()=>setDark(v=>!v)} title="Toggle theme">{dark?<Sun size={17}/>:<Moon size={17}/>}</button><button className="avatar-btn" title="Settings" onClick={()=>setPage('settings')}><UserRound size={17}/></button></div></header>
+        <header className="topbar"><button className="mobile-menu icon-btn" aria-label="Open menu" aria-expanded={mobileNav} onClick={()=>setMobileNav(v=>!v)}><Menu size={19}/></button><div className="breadcrumb"><span>Workspace</span><i>/</i><strong>{pageTitle}</strong></div><div className="top-actions"><div className="date-pill"><CalendarDays size={14}/><span>{new Intl.DateTimeFormat('en', {day:'numeric',month:'short',year:'numeric',timeZone:data.preferences?.timezone||'Asia/Dhaka'}).format(new Date())}</span></div><button className="icon-btn subtle" onClick={()=>setDark(v=>!v)} title="Toggle theme">{dark?<Sun size={17}/>:<Moon size={17}/>}</button><button className="avatar-btn" title="Settings" onClick={()=>setPage('settings')}><UserRound size={17}/></button></div></header>
         <div className={`page-content ${page==='reports'?'report-print-area':''}`}>
           {page==='dashboard' && <>
             <div className="page-heading"><div><h1>Good {Number(new Intl.DateTimeFormat('en-US',{hour:'numeric',hour12:false,timeZone:data.preferences?.timezone||'Asia/Dhaka'}).format(new Date()))<12?'morning':Number(new Intl.DateTimeFormat('en-US',{hour:'numeric',hour12:false,timeZone:data.preferences?.timezone||'Asia/Dhaka'}).format(new Date()))<18?'afternoon':'evening'}.</h1></div><button className="btn btn-dark" onClick={()=>setModal('transaction')}><Plus size={16}/> Add transaction</button></div>
@@ -262,7 +266,6 @@ export default function App() {
         <footer className="app-footer"><span>© {new Date().getFullYear()} Tyrion</span><span>Make every taka intentional <span className="footer-spark">✳</span></span></footer>
       </main>
     </div>
-    {mobileNav&&<div className="mobile-scrim" onClick={()=>setMobileNav(false)}/>}
     {toast&&<div className="toast"><Check size={16}/>{toast}</div>}
 
     {modal==='account'&&<Modal title="Add an account" onClose={closeModal}><form className="modal-form" onSubmit={addAccount}><p className="form-intro">Enter the money you already have. This becomes your opening balance, not monthly income.</p><Field label="Account name"><input name="name" placeholder="e.g. Main bank account" required/></Field><Field label="Account type"><select name="type"><option>Bank</option><option>Mobile wallet</option><option>Cash</option><option>Savings account</option><option>Other</option></select></Field><Field label={`Opening balance (${data.preferences?.currency || 'BDT'})`}><input name="openingBalance" type="number" min="0" step="0.01" placeholder="0.00" defaultValue="0" required/></Field><ModalActions onCancel={closeModal} label="Save account"/></form></Modal>}

@@ -131,3 +131,117 @@ body, button, input, select, textarea { font-size: 16px; }
   .table-panel td, .table-scroll td { font-size: 14px !important; }
   .segment button { font-size: 13px !important; }
 }
+
+/* =====================================================================
+   Responsive + mobile navigation fixes (desktop / tablet / phone)
+   Root causes fixed here:
+   - `.glass{position:relative}` was overriding `.sidebar{position:fixed|sticky}`, so the
+     hidden drawer sat in normal flow and pushed the whole page down on phones.
+   - `.app-frame` backdrop-filter made fixed children relative to the frame, not the screen.
+   - The scrim was outside the frame's stacking context and covered the drawer, eating taps.
+   ===================================================================== */
+html { -webkit-text-size-adjust: 100%; }
+body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+body.no-scroll { overflow: hidden; }
+button, .nav-item { touch-action: manipulation; }
+.app-shell { min-height: 100vh; min-height: 100dvh; overflow: clip; }
+.app-frame { min-height: calc(100vh - 52px); min-height: calc(100dvh - 52px); }
+.loading-screen, .reset-screen, .auth-screen, .auth-art, .public-blog-shell { min-height: 100vh; min-height: 100dvh; }
+.loading-screen { height: 100vh; height: 100dvh; }
+.drawer-close { display: none; }
+.metric-value { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+.table-scroll { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.modal { max-height: 90vh; max-height: 90dvh; overscroll-behavior: contain; }
+.breadcrumb { min-width: 0; }
+.breadcrumb strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-actions { flex-shrink: 0; }
+@keyframes tyrion-fade { from { opacity: 0 } to { opacity: 1 } }
+
+/* Desktop: sticky sidebar that always fits the screen */
+.sidebar.glass { position: sticky; top: 10px; align-self: start; height: calc(100vh - 56px); height: calc(100dvh - 56px); min-height: 0; overflow: hidden; }
+.sidebar.glass:hover { transform: none; }
+.brand-row, .sidebar-label, .sidebar-bottom { flex-shrink: 0; }
+.nav-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+
+/* Tablet and below: slide-in drawer */
+@media (max-width: 920px) {
+  .app-frame { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(250,251,251,.3); }
+  :root { --blur: blur(12px); }
+  .sidebar.glass {
+    position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; height: auto; align-self: stretch; width: min(310px, 86vw);
+    border-radius: 0 24px 24px 0; background: #f7f8f8;
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-105%); visibility: hidden; box-shadow: none;
+    transition: transform .26s cubic-bezier(.2,.75,.25,1), visibility 0s linear .26s, box-shadow .26s;
+  }
+  .dark .sidebar.glass { background: #1c2320; }
+  .sidebar.glass:hover { transform: translateX(-105%); }
+  .sidebar.glass.mobile-open, .sidebar.glass.mobile-open:hover {
+    transform: none; visibility: visible; box-shadow: 0 20px 60px rgba(0,0,0,.28);
+    transition: transform .26s cubic-bezier(.2,.75,.25,1), visibility 0s, box-shadow .26s;
+  }
+  .brand-row { padding-bottom: 24px; }
+  .drawer-close { display: inline-grid; place-items: center; margin-left: auto; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); }
+  .drawer-close:hover { background: rgba(120,134,126,.12); color: var(--ink); }
+  .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(15,22,18,.42); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: tyrion-fade .2s ease; }
+  .nav-item { min-height: 48px; }
+
+  .topbar { position: sticky; top: 0; z-index: 40; margin: 0 -8px; padding: env(safe-area-inset-top, 0px) 8px 0; height: calc(58px + env(safe-area-inset-top, 0px)); gap: 8px;
+    background: rgba(236,238,239,.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .dark .topbar { background: rgba(23,28,26,.88); }
+  .breadcrumb { flex: 1; }
+  .topbar .icon-btn, .topbar .avatar-btn { width: 40px; height: 40px; }
+  .modal-backdrop { z-index: 65; }
+}
+
+/* Larger tablets / small laptops */
+@media (max-width: 1200px) {
+  .sidebar.glass { height: calc(100vh - 40px); height: calc(100dvh - 40px); }
+}
+@media (max-width: 920px) {
+  .sidebar.glass { height: auto; }
+}
+@media (max-width: 820px) {
+  .metric-grid, .metric-grid.three, .metric-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-grid.three > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .dashboard-main-grid, .bottom-grid { grid-template-columns: 1fr; }
+  .auth-screen { grid-template-columns: 1fr; }
+  .auth-art { display: none; }
+  .auth-panel { width: min(420px, 88%); min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; }
+}
+
+/* Phones */
+@media (max-width: 650px) {
+  .topbar { margin: 0 -13px; padding-left: 13px; padding-right: 13px; }
+  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .modal, .modal-wide { width: 100%; max-width: 100%; max-height: 92vh; max-height: 92dvh; border-radius: 22px 22px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .toast { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); max-width: none; }
+  .page-content { padding-bottom: 28px; }
+  .sidebar.glass { border-radius: 0 22px 22px 0; }
+}
+@media (max-width: 520px) {
+  .breadcrumb > span, .breadcrumb > i { display: none; }
+  .breadcrumb strong { font-size: 17px !important; }
+}
+@media (max-width: 480px) {
+  .metric-grid, .metric-grid.three, .metric-grid.four { grid-template-columns: 1fr; }
+  .metric-grid.three > :last-child:nth-child(odd) { grid-column: auto; }
+  .metric-card { min-height: 0; }
+  .form-two { grid-template-columns: 1fr; }
+  .pulse-stats { flex-wrap: wrap; row-gap: 12px; }
+  .panel-head { flex-wrap: wrap; }
+  .page-heading h1 { font-size: 29px !important; }
+}
+@media (max-width: 360px) {
+  .main-area { padding: 0 10px; }
+  .topbar { margin: 0 -10px; padding-left: 10px; padding-right: 10px; }
+}
+
+/* Setup banner: stack cleanly on phones */
+@media (max-width: 650px) {
+  .setup-banner { gap: 12px; }
+  .setup-banner > div:nth-child(2) { flex: 1 1 calc(100% - 60px); width: auto; min-width: 0; }
+  .setup-banner strong { font-size: 16px; line-height: 1.35; display: block; }
+  .setup-banner p { font-size: 14px; line-height: 1.5; }
+  .setup-banner > .btn { margin-left: 0; width: 100%; }
+}
