@@ -30,7 +30,18 @@ export function accountBalances(data: FinanceData): Record<string, number> {
   data.dividends.forEach(d => { balances[d.accountId] = round2((balances[d.accountId] ?? 0) + d.amount) })
   data.investments.forEach(i => { balances[i.accountId] = round2((balances[i.accountId] ?? 0) - i.invested - Number(i.fees || 0)) })
   ;(data.investmentEvents || []).forEach(ev => { const fee = Number(ev.fee || 0); if (ev.kind === 'contribute' && ev.accountId) balances[ev.accountId] = round2((balances[ev.accountId] ?? 0) - ev.amount - fee); if (ev.kind === 'withdraw' && ev.accountId) balances[ev.accountId] = round2((balances[ev.accountId] ?? 0) + ev.amount - fee); if (ev.kind === 'dividend' && ev.accountId) balances[ev.accountId] = round2((balances[ev.accountId] ?? 0) + ev.amount - fee) })
+  // Money lent leaves the chosen account; money borrowed arrives in it.
+  ;(data.debts || []).forEach(d => { balances[d.accountId] = round2((balances[d.accountId] ?? 0) + (d.direction === 'lent' ? -d.amount : d.amount)) })
+  // Repayments: received money (lent) goes into ANY account you choose; paid back money (borrowed) leaves the chosen account.
+  ;(data.debtPayments || []).forEach(p => { const d = (data.debts || []).find(x => x.id === p.debtId); if (!d) return; balances[p.accountId] = round2((balances[p.accountId] ?? 0) + (d.direction === 'lent' ? p.amount : -p.amount)) })
   return balances
+}
+export function debtPositions(data: FinanceData) {
+  return (data.debts || []).map(debt => {
+    const payments = (data.debtPayments || []).filter(p => p.debtId === debt.id).sort((a, b) => b.date.localeCompare(a.date))
+    const paid = round2(payments.reduce((s, p) => s + p.amount, 0))
+    return { debt, payments, paid, outstanding: Math.max(0, round2(debt.amount - paid)) }
+  })
 }
 export function stockPositions(stocks: Stock[], trades: StockTrade[]) {
   return stocks.map(stock => {
@@ -84,7 +95,10 @@ export function getTotals(data: FinanceData) {
   const incomes = data.transactions.filter(t=>t.kind==='income')
   const investedCapital = round2(positions.reduce((s,p)=>s+p.costBasis,0) + data.investments.reduce((s,i)=>s+investmentCostBasis(data,i.id),0))
   const dividendTotal = round2(data.dividends.reduce((s,d)=>s+d.amount,0))
-  return { balances, accountTotal, savings, available: accountTotal-savings, stockValue, otherValue, investmentValue: stockValue+otherValue, netWorth: accountTotal+stockValue+otherValue, expenses, incomes, investedCapital, dividendTotal, positions }
+  const debtRows = debtPositions(data)
+  const receivable = round2(debtRows.filter(r => r.debt.direction === 'lent').reduce((s, r) => s + r.outstanding, 0))
+  const payable = round2(debtRows.filter(r => r.debt.direction === 'borrowed').reduce((s, r) => s + r.outstanding, 0))
+  return { receivable, payable, balances, accountTotal, savings, available: accountTotal-savings, stockValue, otherValue, investmentValue: stockValue+otherValue, netWorth: round2(accountTotal+stockValue+otherValue+receivable-payable), expenses, incomes, investedCapital, dividendTotal, positions }
 }
 export function monthBounds(date = todayISO()) { const [y,m] = date.split('-').map(Number); return { start: `${y}-${String(m).padStart(2,'0')}-01`, end: isoLocal(new Date(y, m, 0)) } }
 export function rangeTotals(data: FinanceData, start: string, end: string) {

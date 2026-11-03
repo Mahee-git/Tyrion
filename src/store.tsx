@@ -8,14 +8,14 @@ export const supabase: SupabaseClient | null = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } })
   : null
 
-export const emptyData: FinanceData = { accounts: [], categories: [], transactions: [], goals: [], savingsEvents: [], investments: [], investmentEvents: [], stocks: [], stockTrades: [], dividends: [], blogs: [], preferences: { currency: 'BDT', timezone: 'Asia/Dhaka' } }
+export const emptyData: FinanceData = { accounts: [], categories: [], transactions: [], goals: [], savingsEvents: [], investments: [], investmentEvents: [], stocks: [], stockTrades: [], dividends: [], debts: [], debtPayments: [], blogs: [], preferences: { currency: 'BDT', timezone: 'Asia/Dhaka' } }
 type StoreValue = {
   data: FinanceData; setData: React.Dispatch<React.SetStateAction<FinanceData>>
   session: Session | null; authLoading: boolean; cloudEnabled: boolean; isAdmin: boolean; passwordRecovery: boolean
   signIn: (email: string, password: string) => Promise<string | null>
   signUp: (email: string, password: string) => Promise<string | null>
   resetPassword: (email: string) => Promise<string | null>; updatePassword: (password: string) => Promise<string | null>
-  signOut: () => Promise<void>; saveBlog: (post: BlogPost) => Promise<string | null>; deleteBlog: (id: string) => Promise<string | null>; uploadBlogCover: (file: File) => Promise<{ url: string | null; error: string | null }>
+  signOut: () => Promise<void>; uploadAvatar: (blob: Blob) => Promise<{ url: string | null; error: string | null }>; removeAvatar: () => Promise<void>; saveBlog: (post: BlogPost) => Promise<string | null>; deleteBlog: (id: string) => Promise<string | null>; uploadBlogCover: (file: File) => Promise<{ url: string | null; error: string | null }>
 }
 const StoreContext = createContext<StoreValue | null>(null)
 const storageKey = (userId?: string) => `tyrion-v1-${userId || 'demo'}`
@@ -148,6 +148,18 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     const { data: publicFile } = supabase.storage.from('blog-covers').getPublicUrl(path)
     return { url: publicFile.publicUrl, error: null }
   }
+  const uploadAvatar = async (blob: Blob) => {
+    if (!supabase || !session?.user) return { url: null, error: null }
+    const path = `${session.user.id}/avatar.jpg`
+    const { error } = await supabase.storage.from('avatars').upload(path, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' })
+    if (error) return { url: null, error: error.message }
+    const { data: file } = supabase.storage.from('avatars').getPublicUrl(path)
+    return { url: `${file.publicUrl}?v=${Date.now()}`, error: null }
+  }
+  const removeAvatar = async () => {
+    if (!supabase || !session?.user) return
+    try { await supabase.storage.from('avatars').remove([`${session.user.id}/avatar.jpg`]) } catch { /* nothing to remove */ }
+  }
   const deleteBlog = async (id: string) => {
     if (!supabase) return 'Blog management is available only to the configured administrator account.'
     if (!session?.user || !isAdmin) return 'Only an authenticated administrator can delete blog posts.'
@@ -155,7 +167,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     if (!error) setData(d => ({ ...d, blogs: d.blogs.filter(p => p.id !== id) }))
     return error?.message || null
   }
-  const value = useMemo(() => ({ data, setData, session, authLoading, cloudEnabled: !!supabase, isAdmin, passwordRecovery, signIn, signUp, resetPassword, updatePassword, signOut, saveBlog, deleteBlog, uploadBlogCover }), [data, session, authLoading, isAdmin, passwordRecovery])
+  const value = useMemo(() => ({ data, setData, session, authLoading, cloudEnabled: !!supabase, isAdmin, passwordRecovery, signIn, signUp, resetPassword, updatePassword, signOut, uploadAvatar, removeAvatar, saveBlog, deleteBlog, uploadBlogCover }), [data, session, authLoading, isAdmin, passwordRecovery])
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
 }
 export function useFinance() { const value = useContext(StoreContext); if (!value) throw new Error('useFinance must be used within FinanceProvider'); return value }
